@@ -8,7 +8,7 @@ Botão **"Abrir Filtros"** (azul-claro, ícone de funil, divisória e seta) que 
 
 ## Como usar no Power BI
 
-1. Baixe o arquivo pronto: [`dist/filtroPopup7AA90184E2E143838BC5449850609E02.1.13.0.0.pbiviz`](dist/).
+1. Baixe o arquivo pronto: [`dist/filtroPopup7AA90184E2E143838BC5449850609E02.1.14.0.0.pbiviz`](dist/).
 2. No Power BI Desktop: painel **Visualizações → `...` → Importar um visual de um arquivo** e selecione o `.pbiviz`.
 3. Insira o visual na página e arraste as colunas para os espaços de dados:
    - **Filtro aninhado 1, 2, 3 e 4** — todas as colunas colocadas no mesmo espaço viram **um único filtro em árvore**, na ordem em que foram adicionadas (a primeira é o nível de cima). Ex.: *Ano* e *Mês* no "Filtro aninhado 1" e *Área* e *Curso* no "Filtro aninhado 2". Sem limite de colunas por espaço.
@@ -20,6 +20,7 @@ Botão **"Abrir Filtros"** (azul-claro, ícone de funil, divisória e seta) que 
 ### O que tem no pop-up
 
 - Um bloco por campo, com **pesquisa**, **"Selecionar tudo"** e lista com caixas de seleção (ou botão de opção, se "Seleção única" estiver ligado).
+- **"Selecionar tudo" funciona como no slicer nativo:** marca tudo e, se depois você desmarcar alguns itens, o filtro enviado é **"tudo exceto X e Y"** (`NotIn`), e não uma lista com os itens marcados. Assim valores que não aparecem na lista agora continuam valendo. Ex.: com uma diretoria escolhida, a lista de especialidades mostra só as deste ano; com "Selecionar tudo" menos X e Y, um gráfico de ano anterior continua contando as especialidades que só existiam no ano passado. O cabeçalho do bloco mostra "Todos exceto …". Clicar de novo em "Selecionar tudo" desmarca tudo. Com a pesquisa preenchida, "Selecionar tudo" vale só para os itens encontrados (lista de marcados, como antes).
 - Resumo do que está selecionado no cabeçalho de cada bloco e botão de borracha para **limpar só aquele filtro**. Os blocos abrem **retraídos** ao abrir o pop-up; clique no título para expandir.
 - **Filtros aninhados:** cada espaço "Filtro aninhado N" vira uma árvore, com setas para expandir/recolher, marcação parcial no nível de cima e contador de itens.
 - Opcional: modo **intervalo (De/Até)** para campos numéricos e de data.
@@ -162,6 +163,7 @@ RETURN
 - O filtro enviado ao Power BI:
   - se só itens inteiros do primeiro nível estão marcados → filtro simples nessa coluna;
   - caso contrário → filtro de várias colunas (*tuple filter* da API de visuais), com o caminho completo de cada item marcado. Por isso ele é exato: marcar *2025 › Mar* filtra só março de 2025.
+  - depois de **"Selecionar tudo"**, cada item desmarcado vira um **"NotIn"** na coluna do seu nível (ex.: desmarcar a diretoria *D3* e a especialidade *Y* gera "Diretoria ≠ D3" **e** "Especialidade ≠ Y"). Se o item desmarcado tem um valor que se repete em outro pai (desmarcar *2025 › Mar* mas manter *2024 › Mar*), o "NotIn" na coluna não seria exato, e o visual volta a usar o filtro de várias colunas com os itens marcados.
 - As colunas de uma mesma árvore podem ser de tabelas diferentes, desde que estejam relacionadas no modelo (veja "Colunas de tabelas diferentes").
 - A ordem dos itens segue a ordem do Power BI, incluindo "Classificar por coluna" (ex.: meses em ordem de calendário).
 
