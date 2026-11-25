@@ -2,7 +2,7 @@
 
 import powerbi from "powerbi-visuals-api";
 import { FormattingSettingsService } from "powerbi-visuals-utils-formattingmodel";
-import { IAdvancedFilter, IBasicFilter, IFilterTarget } from "powerbi-models";
+import { IAdvancedFilter, IBasicFilter, IFilterTarget, ITupleFilter } from "powerbi-models";
 import "./../style/visual.less";
 
 import VisualConstructorOptions = powerbi.extensibility.visual.VisualConstructorOptions;
@@ -22,17 +22,19 @@ import {
     FieldModel,
     FieldState,
     ValueItem,
+    allState,
     buildFilter,
     emptyState,
     formatValue,
     getKind,
     getTarget,
     isActive,
+    isChecked,
     sameTarget,
     stateFromFilter,
     valueKey
 } from "./filters";
-import { NestedGroup, TreeNode, buildTree, buildTreeFilter, treeStateFromFilters } from "./hierarchy";
+import { NestedGroup, TreeNode, buildTree, buildTreeFilters, treeStateFromFilters } from "./hierarchy";
 import { SegmentAccumulator } from "./accumulator";
 import { CATALOG_GROUP, buildCatalog, catalogKeys, isCatalogColumn } from "./catalog";
 
@@ -284,8 +286,11 @@ export class Visual implements IVisual {
                     // marcado nela (para poder desmarcar). Um filtro sem valores continua aparecendo.
                     this.syncStateFromHost(this.jsonFilters);
                     const available = catalogKeys(buildCatalog(this.catalogNow.categories(), []));
-                    const filtered = buildCatalog(all, only, (fieldKey, pathKey) =>
-                        !!available.get(fieldKey)?.has(pathKey) || !!this.states.get(fieldKey)?.selected.has(pathKey));
+                    const filtered = buildCatalog(all, only, (fieldKey, pathKey) => {
+                        const state = this.states.get(fieldKey);
+                        return !!available.get(fieldKey)?.has(pathKey)
+                            || !!state?.selected.has(pathKey) || !!state?.excluded.has(pathKey);
+                    });
                     this.fields = filtered.fields;
                     this.nested = filtered.nested;
                 }
@@ -429,13 +434,21 @@ export class Visual implements IVisual {
         const next = new Map<string, FieldState>();
         for (const field of this.fields) {
             const group = this.nested.get(field.key);
+            let state: FieldState;
             if (group) {
-                next.set(field.key, treeStateFromFilters(group, jsonFilters));
-                continue;
+                state = treeStateFromFilters(group, jsonFilters);
+            } else {
+                const filter = jsonFilters.find(f => f && f.target && !Array.isArray(f.target)
+                    && sameTarget(f.target as IFilterTarget, field.target));
+                state = filter ? stateFromFilter(field, filter) : emptyState();
             }
-            const filter = jsonFilters.find(f => f && f.target && !Array.isArray(f.target)
-                && sameTarget(f.target as IFilterTarget, field.target));
-            next.set(field.key, filter ? stateFromFilter(field, filter) : emptyState());
+            // "Selecionar tudo" sem exceções não envia filtro (equivale a não filtrar), então o Power BI
+            // não devolve nada: mantém a marcação local de "tudo selecionado".
+            const previous = this.states.get(field.key);
+            if (!isActive(state) && previous?.invert && previous.excluded.size === 0) {
+                state = allState();
+            }
+            next.set(field.key, state);
         }
         this.states = next;
     }
@@ -452,10 +465,10 @@ export class Visual implements IVisual {
     private applyFilters(): void {
         const single = this.formattingSettings.slicerCard.singleSelect.value;
         const filters = this.fields
-            .map(f => {
+            .flatMap<IBasicFilter | IAdvancedFilter | ITupleFilter | undefined>(f => {
                 const state = this.states.get(f.key) || emptyState();
                 const group = this.nested.get(f.key);
-                return group ? buildTreeFilter(group, state, single) : buildFilter(f, state, this.useRange(f), single);
+                return group ? buildTreeFilters(group, state, single) : [buildFilter(f, state, this.useRange(f), single)];
             })
             .filter(f => !!f);
 
@@ -493,9 +506,19 @@ export class Visual implements IVisual {
     }
 
     private toggleValue(field: FieldModel, item: ValueItem): void {
-        const state = this.states.get(field.key) || emptyState();
         const single = this.formattingSettings.slicerCard.singleSelect.value;
-        if (state.selected.has(item.key)) {
+        let state = this.states.get(field.key) || emptyState();
+        if (single && state.invert) {
+            state = emptyState();
+        }
+        if (state.invert) {
+            // "Tudo exceto": desmarcar acrescenta à lista de exceções.
+            if (state.excluded.has(item.key)) {
+                state.excluded.delete(item.key);
+            } else {
+                state.excluded.set(item.key, item.raw);
+            }
+        } else if (state.selected.has(item.key)) {
             state.selected.delete(item.key);
         } else {
             if (single) {
@@ -503,43 +526,68 @@ export class Visual implements IVisual {
             }
             state.selected.set(item.key, item.raw);
         }
-        this.states.set(field.key, state);
+        this.states.set(field.key, single ? state : this.normalize(field, state));
         this.applyFilters();
     }
 
+    /**
+     * "Selecionar tudo". Sem pesquisa, funciona como no slicer nativo: marca tudo e passa para o modo
+     * "tudo exceto" (desmarcar depois gera "NotIn X, Y" em vez de uma lista dos valores visíveis);
+     * se tudo já estava marcado, desmarca tudo. Com pesquisa, vale só para os valores encontrados.
+     */
     private toggleAllVisible(field: FieldModel): void {
-        const state = this.states.get(field.key) || emptyState();
+        let state = this.states.get(field.key) || emptyState();
         const visible = this.visibleValues(field);
-        const allSelected = visible.length > 0 && visible.every(v => state.selected.has(v.key));
-        if (allSelected) {
-            visible.forEach(v => state.selected.delete(v.key));
+        const allChecked = visible.length > 0 && visible.every(v => isChecked(state, v.key));
+
+        if (!this.searchTerm(field)) {
+            state = allChecked ? emptyState() : allState();
+        } else if (state.invert) {
+            visible.forEach(v => allChecked ? state.excluded.set(v.key, v.raw) : state.excluded.delete(v.key));
         } else {
-            visible.forEach(v => state.selected.set(v.key, v.raw));
+            visible.forEach(v => allChecked ? state.selected.delete(v.key) : state.selected.set(v.key, v.raw));
         }
-        // Marcar todos os valores equivale a não filtrar, como no slicer nativo.
-        if (state.selected.size === field.values.length) {
-            state.selected.clear();
-        }
-        this.states.set(field.key, state);
+        this.states.set(field.key, this.normalize(field, state));
         this.applyFilters();
     }
 
     /** Marca/desmarca um nó da árvore: vale para todas as folhas abaixo dele. */
     private toggleNode(field: FieldModel, group: NestedGroup, node: TreeNode): void {
-        const state = this.ensureState(field);
-        const allSelected = node.leafKeys.every(k => state.selected.has(k));
-        if (allSelected) {
+        const single = this.formattingSettings.slicerCard.singleSelect.value;
+        let state = this.ensureState(field);
+        if (single && state.invert) {
+            state = emptyState();
+        }
+        const allChecked = node.leafKeys.every(k => isChecked(state, k));
+        if (state.invert) {
+            node.leafKeys.forEach(k => allChecked ? state.excluded.set(k, null) : state.excluded.delete(k));
+        } else if (allChecked) {
             node.leafKeys.forEach(k => state.selected.delete(k));
         } else {
-            if (this.formattingSettings.slicerCard.singleSelect.value) {
+            if (single) {
                 state.selected.clear();
             }
             node.leafKeys.forEach(k => state.selected.set(k, null));
         }
-        if (state.selected.size === field.values.length) {
-            state.selected.clear();
-        }
+        this.states.set(field.key, single ? state : this.normalize(field, state));
         this.applyFilters();
+    }
+
+    /**
+     * Casos que equivalem a outro estado: todos desmarcados → sem filtro; todos marcados um a um →
+     * "Selecionar tudo" (modo "tudo exceto" sem exceções, para os próximos cliques gerarem "NotIn").
+     */
+    private normalize(field: FieldModel, state: FieldState): FieldState {
+        if (state.rangeFrom !== "" || state.rangeTo !== "" || field.values.length === 0) {
+            return state;
+        }
+        if (state.invert) {
+            return field.values.every(v => state.excluded.has(v.key)) ? emptyState() : state;
+        }
+        if (state.selected.size === 0) {
+            return emptyState();
+        }
+        return field.values.every(v => state.selected.has(v.key)) ? allState() : state;
     }
 
     private searchTerm(field: FieldModel): string {
@@ -902,7 +950,7 @@ export class Visual implements IVisual {
             if (!node) {
                 return;
             }
-            const count = node.leafKeys.filter(k => state.selected.has(k)).length;
+            const count = node.leafKeys.filter(k => isChecked(state, k)).length;
             const full = count > 0 && count === node.leafKeys.length;
             item.classList.toggle("fp-selected", full);
             item.classList.toggle("fp-partial", count > 0 && !full);
@@ -924,7 +972,7 @@ export class Visual implements IVisual {
         }
 
         for (const item of visible.slice(0, MAX_RENDERED_ITEMS)) {
-            const row = this.renderItem(item.label, state.selected.has(item.key), !single);
+            const row = this.renderItem(item.label, isChecked(state, item.key), !single);
             row.dataset.key = item.key;
             row.addEventListener("click", () => this.toggleValue(field, item));
             list.appendChild(row);
@@ -1005,7 +1053,7 @@ export class Visual implements IVisual {
             }
             const state = this.states.get(field.key) || emptyState();
             section.querySelectorAll<HTMLElement>(".fp-item[data-key]").forEach(row => {
-                const selected = state.selected.has(row.dataset.key || "");
+                const selected = isChecked(state, row.dataset.key || "");
                 row.classList.toggle("fp-selected", selected);
                 row.setAttribute("aria-selected", String(selected));
             });
@@ -1034,8 +1082,8 @@ export class Visual implements IVisual {
         }
         const state = this.states.get(field.key) || emptyState();
         const visible = this.visibleValues(field);
-        const allSelected = visible.length > 0 && visible.every(v => state.selected.has(v.key));
-        const some = !allSelected && visible.some(v => state.selected.has(v.key));
+        const allSelected = visible.length > 0 && visible.every(v => isChecked(state, v.key));
+        const some = !allSelected && visible.some(v => isChecked(state, v.key));
         all.classList.toggle("fp-selected", allSelected);
         all.classList.toggle("fp-partial", some);
     }
@@ -1050,6 +1098,8 @@ export class Visual implements IVisual {
                 count.textContent = "Todos";
             } else if (this.useRange(field)) {
                 count.textContent = "Intervalo";
+            } else if (state.invert) {
+                count.textContent = this.exceptSummary(field, state);
             } else if (this.nested.has(field.key)) {
                 const labels = this.treeSummary(this.nested.get(field.key).roots, state);
                 count.textContent = labels.length === 1 ? labels[0] : labels.length + " selecionados";
@@ -1062,18 +1112,31 @@ export class Visual implements IVisual {
         }
     }
 
+    /** Resumo do modo "tudo exceto": "Todos exceto X" ou "Todos exceto N". */
+    private exceptSummary(field: FieldModel, state: FieldState): string {
+        const group = this.nested.get(field.key);
+        let labels: string[];
+        if (group) {
+            const excluded = { has: (k: string): boolean => state.excluded.has(k) };
+            labels = this.treeSummary(group.roots, state, excluded);
+        } else {
+            labels = Array.from(state.excluded.entries()).map(([key, raw]) => this.labelOf(field, key, raw));
+        }
+        return labels.length === 1 ? "Todos exceto " + labels[0] : "Todos exceto " + labels.length;
+    }
+
     /** Resume a seleção pelos nós mais altos que estão totalmente marcados. */
-    private treeSummary(nodes: TreeNode[], state: FieldState): string[] {
+    private treeSummary(nodes: TreeNode[], state: FieldState, marked: { has(key: string): boolean } = state.selected): string[] {
         const labels: string[] = [];
         for (const node of nodes) {
-            const count = node.leafKeys.filter(k => state.selected.has(k)).length;
+            const count = node.leafKeys.filter(k => marked.has(k)).length;
             if (count === 0) {
                 continue;
             }
             if (count === node.leafKeys.length) {
                 labels.push(node.item.label);
             } else {
-                labels.push(...this.treeSummary(node.children, state));
+                labels.push(...this.treeSummary(node.children, state, marked));
             }
         }
         return labels;
