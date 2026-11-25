@@ -7,10 +7,9 @@ import {
     IBasicFilter,
     IFilterTarget,
     ITupleFilter,
-    PrimitiveValueType,
     TupleFilter
 } from "powerbi-models";
-import { FieldModel, FieldState, ValueItem, emptyState, sameTarget, valueKey } from "./filters";
+import { FieldModel, FieldState, ValueItem, emptyState, isChecked, sameTarget, toFilterValue, valueKey } from "./filters";
 
 import PrimitiveValue = powerbi.PrimitiveValue;
 
@@ -81,13 +80,6 @@ export function buildTree(levels: FieldModel[], columns: PrimitiveValue[][]): Ne
     return { levels, roots, nodes, leafPath };
 }
 
-function toFilterValue(raw: PrimitiveValue): PrimitiveValueType {
-    if (raw instanceof Date) {
-        return raw.toJSON();
-    }
-    return (raw === undefined || raw === "" ? null : raw) as PrimitiveValueType;
-}
-
 function fromFilterValue(value: unknown, level: FieldModel): PrimitiveValue {
     if (level.kind === "date" && typeof value === "string") {
         return new Date(value);
@@ -112,28 +104,68 @@ export function coverNodes(nodes: TreeNode[], selected: { has(key: string): bool
     return result;
 }
 
+/** Nós de um nível com o mesmo valor (ex.: o mês 3 aparece em 2024 e em 2025). */
+function nodesWithValue(group: NestedGroup, level: number, key: string): TreeNode[] {
+    const result: TreeNode[] = [];
+    group.nodes.forEach(node => {
+        if (node.level === level && node.item.key === key) {
+            result.push(node);
+        }
+    });
+    return result;
+}
+
+/** Filtro de várias colunas (tupla) com o caminho completo das folhas indicadas. */
+function tupleFilter(group: NestedGroup, ids: string[]): ITupleFilter {
+    const values = ids
+        .map(id => group.leafPath.get(id))
+        .filter(path => !!path)
+        .map(path => path.map(raw => ({ value: toFilterValue(raw) })));
+    return new TupleFilter(group.levels.map(l => l.target), "In", values).toJSON();
+}
+
 /**
- * Filtro da árvore. Se só há itens inteiros do 1º nível marcados, usa um filtro
+ * Filtros da árvore. Se só há itens inteiros do 1º nível marcados, usa um filtro
  * simples nessa coluna; caso contrário, um filtro de várias colunas (tupla) com
  * o caminho completo de cada folha marcada, que é exato mesmo quando o mesmo
  * valor aparece em vários pais (ex.: o mês 3 de 2024 e o mês 3 de 2025).
+ *
+ * No modo "tudo exceto" (depois de "Selecionar tudo"), cada item desmarcado vira um
+ * "NotIn" na coluna do seu nível (um filtro por nível; o Power BI combina com E).
+ * Assim valores que não aparecem na lista agora (ex.: só existem no ano anterior)
+ * continuam valendo. Se algum item desmarcado tem um valor que se repete em outro pai
+ * (Mar de 2025, mas não Mar de 2024), "NotIn" na coluna não é exato: aí volta para a tupla.
  */
-export function buildTreeFilter(group: NestedGroup, state: FieldState, singleSelect: boolean): IBasicFilter | ITupleFilter | undefined {
+export function buildTreeFilters(group: NestedGroup, state: FieldState, singleSelect: boolean): Array<IBasicFilter | ITupleFilter> {
+    if (state.invert) {
+        if (state.excluded.size === 0) {
+            return [];
+        }
+        const cover = coverNodes(group.roots, state.excluded);
+        if (cover.every(n => n.level === 0 || nodesWithValue(group, n.level, n.item.key).length === 1)) {
+            const filters: IBasicFilter[] = [];
+            group.levels.forEach((level, l) => {
+                const values = cover.filter(n => n.level === l).map(n => toFilterValue(n.item.raw));
+                if (values.length) {
+                    filters.push(new BasicFilter(level.target, "NotIn", values).toJSON());
+                }
+            });
+            return filters;
+        }
+        const checked = Array.from(group.leafPath.keys()).filter(id => isChecked(state, id));
+        return checked.length ? [tupleFilter(group, checked)] : [];
+    }
+
     if (state.selected.size === 0) {
-        return undefined;
+        return [];
     }
     const cover = coverNodes(group.roots, state.selected);
     if (cover.every(n => n.level === 0)) {
         const filter = new BasicFilter(group.levels[0].target, "In", cover.map(n => toFilterValue(n.item.raw)));
         filter.requireSingleSelection = singleSelect && cover.length === 1;
-        return filter.toJSON();
+        return [filter.toJSON()];
     }
-
-    const values = Array.from(state.selected.keys())
-        .map(id => group.leafPath.get(id))
-        .filter(path => !!path)
-        .map(path => path.map(raw => ({ value: toFilterValue(raw) })));
-    return new TupleFilter(group.levels.map(l => l.target), "In", values).toJSON();
+    return [tupleFilter(group, Array.from(state.selected.keys()))];
 }
 
 function sameTargets(a: IFilterTarget[], b: IFilterTarget[]): boolean {
@@ -161,13 +193,27 @@ export function treeStateFromFilters(group: NestedGroup, filters: Array<{ filter
                     state.selected.set(id, null);
                 }
             }
-        } else if (filter.filterType === FilterType.Basic && !Array.isArray(filter.target)
-            && sameTarget(filter.target as IFilterTarget, targets[0])) {
-            for (const value of (filter as IBasicFilter).values) {
-                const root = group.nodes.get(valueKey(fromFilterValue(value, group.levels[0])));
-                root?.leafKeys.forEach(k => state.selected.set(k, null));
+        } else if (filter.filterType === FilterType.Basic && !Array.isArray(filter.target)) {
+            const basic = filter as IBasicFilter;
+            const level = targets.findIndex(t => sameTarget(filter.target as IFilterTarget, t));
+            if (basic.operator === "NotIn" && level >= 0) {
+                // "Tudo exceto": um filtro por nível com os itens desmarcados.
+                state.invert = true;
+                for (const value of basic.values) {
+                    const key = valueKey(fromFilterValue(value, group.levels[level]));
+                    nodesWithValue(group, level, key).forEach(node => node.leafKeys.forEach(k => state.excluded.set(k, null)));
+                }
+            } else if (level === 0) {
+                for (const value of basic.values) {
+                    const root = group.nodes.get(valueKey(fromFilterValue(value, group.levels[0])));
+                    root?.leafKeys.forEach(k => state.selected.set(k, null));
+                }
             }
         }
+    }
+    if (state.invert) {
+        // Os dois modos não se misturam: o "NotIn" já diz tudo o que está marcado.
+        state.selected.clear();
     }
     return state;
 }

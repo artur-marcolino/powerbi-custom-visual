@@ -31,9 +31,16 @@ export interface FieldModel {
     values: ValueItem[];
 }
 
-/** Estado de seleção de um campo: lista de valores marcados ou intervalo de/até. */
+/**
+ * Estado de seleção de um campo: lista de valores marcados, intervalo de/até ou, depois de
+ * "Selecionar tudo", o modo "tudo exceto" (como o slicer nativo): tudo marcado menos `excluded`.
+ * Nesse modo o filtro enviado é "NotIn excluídos", que não depende dos valores visíveis agora
+ * (ex.: valores que só existem no ano anterior continuam valendo).
+ */
 export interface FieldState {
     selected: Map<string, PrimitiveValue>;
+    invert: boolean;
+    excluded: Map<string, PrimitiveValue>;
     rangeFrom: string;
     rangeTo: string;
 }
@@ -41,11 +48,27 @@ export interface FieldState {
 export const BLANK_LABEL = "(Em branco)";
 
 export function emptyState(): FieldState {
-    return { selected: new Map(), rangeFrom: "", rangeTo: "" };
+    return { selected: new Map(), invert: false, excluded: new Map(), rangeFrom: "", rangeTo: "" };
+}
+
+/** Estado "Selecionar tudo" marcado: tudo selecionado, sem exceções (não filtra nada). */
+export function allState(): FieldState {
+    const state = emptyState();
+    state.invert = true;
+    return state;
+}
+
+/** O valor aparece marcado na lista. */
+export function isChecked(state: FieldState | undefined, key: string): boolean {
+    if (!state) {
+        return false;
+    }
+    return state.invert ? !state.excluded.has(key) : state.selected.has(key);
 }
 
 export function isActive(state: FieldState | undefined): boolean {
-    return !!state && (state.selected.size > 0 || state.rangeFrom !== "" || state.rangeTo !== "");
+    return !!state && (state.selected.size > 0 || (state.invert && state.excluded.size > 0)
+        || state.rangeFrom !== "" || state.rangeTo !== "");
 }
 
 export function getKind(column: DataViewMetadataColumn): FieldKind {
@@ -114,6 +137,17 @@ export function sameTarget(a: IFilterTarget, b: IFilterTarget): boolean {
         && x.hierarchyLevel === y.hierarchyLevel;
 }
 
+/** Converte valor do data view para o formato aceito pelos filtros JSON do Power BI. */
+export function toFilterValue(raw: PrimitiveValue): PrimitiveValueType {
+    if (raw instanceof Date) {
+        return raw.toJSON();
+    }
+    if (raw === undefined || raw === "") {
+        return null as unknown as PrimitiveValueType;
+    }
+    return raw as PrimitiveValueType;
+}
+
 export function valueKey(raw: PrimitiveValue): string {
     if (raw === null || raw === undefined || raw === "") {
         return "blank";
@@ -156,17 +190,6 @@ export function compareValues(a: ValueItem, b: ValueItem): number {
     return String(x).localeCompare(String(y), "pt-BR", { numeric: true, sensitivity: "base" });
 }
 
-/** Converte valor do data view para o formato aceito pelos filtros JSON do Power BI. */
-function toFilterValue(raw: PrimitiveValue): PrimitiveValueType {
-    if (raw instanceof Date) {
-        return raw.toJSON();
-    }
-    if (raw === undefined || raw === "") {
-        return null as unknown as PrimitiveValueType;
-    }
-    return raw as PrimitiveValueType;
-}
-
 /** Converte o texto de um <input type="date|number"> em valor de filtro. */
 function parseRangeInput(text: string, kind: FieldKind, endOfRange: boolean): PrimitiveValueType | undefined {
     if (text === "") {
@@ -200,6 +223,12 @@ export function buildFilter(field: FieldModel, state: FieldState, useRange: bool
             : undefined;
     }
 
+    if (state.invert) {
+        // "Tudo exceto": sem exceções não há o que filtrar.
+        return state.excluded.size
+            ? new BasicFilter(field.target, "NotIn", Array.from(state.excluded.values()).map(toFilterValue)).toJSON()
+            : undefined;
+    }
     if (state.selected.size === 0) {
         return undefined;
     }
@@ -222,14 +251,17 @@ export function stateFromFilter(field: FieldModel, filter: IBasicFilter | IAdvan
     const state = emptyState();
 
     if (filter.filterType === FilterType.Basic) {
+        const basic = filter as IBasicFilter;
         const byKey = new Map(field.values.map(v => [v.key, v.raw]));
-        for (const v of (filter as IBasicFilter).values) {
+        state.invert = basic.operator === "NotIn";
+        const target = state.invert ? state.excluded : state.selected;
+        for (const v of basic.values) {
             let raw: PrimitiveValue = v as PrimitiveValue;
             if (field.kind === "date" && typeof v === "string") {
                 raw = new Date(v);
             }
             const key = valueKey(raw);
-            state.selected.set(key, byKey.has(key) ? byKey.get(key) : raw);
+            target.set(key, byKey.has(key) ? byKey.get(key) : raw);
         }
     } else if (filter.filterType === FilterType.Advanced) {
         for (const c of (filter as IAdvancedFilter).conditions || []) {
