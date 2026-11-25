@@ -258,11 +258,25 @@ class DropdownCardSettings extends FormattingSettingsCard {
         value: { value: "#FFFFFF" }
     });
 
+    closeOnMouseLeave = new formattingSettings.ToggleSwitch({
+        name: "closeOnMouseLeave",
+        displayName: "Fechar ao tirar o mouse",
+        description: "Fecha a lista aberta sozinha quando o mouse sai de cima do visual.",
+        value: true
+    });
+
+    closeDelay = new formattingSettings.NumUpDown({
+        name: "closeDelay",
+        displayName: "Espera antes de fechar (ms)",
+        description: "Tempo que o mouse pode ficar fora do visual antes de a lista fechar. Voltar com o mouse nesse intervalo cancela o fechamento.",
+        value: 400
+    });
+
     name: string = "dropdown";
     displayName: string = "Suspenso";
     slices: Array<FormattingSettingsSlice> = [
         this.placeholder, this.fill, this.fontColor, this.fontSize, this.radius, this.height,
-        this.borderWidth, this.borderColor, this.panelFill
+        this.borderWidth, this.borderColor, this.panelFill, this.closeOnMouseLeave, this.closeDelay
     ];
 }
 

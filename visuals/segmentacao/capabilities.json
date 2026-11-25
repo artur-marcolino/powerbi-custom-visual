@@ -277,6 +277,16 @@
                             }
                         }
                     }
+                },
+                "closeOnMouseLeave": {
+                    "type": {
+                        "bool": true
+                    }
+                },
+                "closeDelay": {
+                    "type": {
+                        "numeric": true
+                    }
                 }
             }
         },

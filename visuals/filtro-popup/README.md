@@ -8,7 +8,7 @@ Botão **"Abrir Filtros"** (azul-claro, ícone de funil, divisória e seta) que 
 
 ## Como usar no Power BI
 
-1. Baixe o arquivo pronto: [`dist/filtroPopup7AA90184E2E143838BC5449850609E02.1.13.0.0.pbiviz`](dist/).
+1. Baixe o arquivo pronto: [`dist/filtroPopup7AA90184E2E143838BC5449850609E02.1.14.0.0.pbiviz`](dist/).
 2. No Power BI Desktop: painel **Visualizações → `...` → Importar um visual de um arquivo** e selecione o `.pbiviz`.
 3. Insira o visual na página e arraste as colunas para os espaços de dados:
    - **Filtro aninhado 1, 2, 3 e 4** — todas as colunas colocadas no mesmo espaço viram **um único filtro em árvore**, na ordem em que foram adicionadas (a primeira é o nível de cima). Ex.: *Ano* e *Mês* no "Filtro aninhado 1" e *Área* e *Curso* no "Filtro aninhado 2". Sem limite de colunas por espaço.
@@ -23,7 +23,7 @@ Botão **"Abrir Filtros"** (azul-claro, ícone de funil, divisória e seta) que 
 - Resumo do que está selecionado no cabeçalho de cada bloco e botão de borracha para **limpar só aquele filtro**. Os blocos abrem **retraídos** ao abrir o pop-up; clique no título para expandir.
 - **Filtros aninhados:** cada espaço "Filtro aninhado N" vira uma árvore, com setas para expandir/recolher, marcação parcial no nível de cima e contador de itens.
 - Opcional: modo **intervalo (De/Até)** para campos numéricos e de data.
-- **Limpar todos os filtros** e **Fechar** no rodapé; também fecha com `Esc`, no `X` ou clicando fora do pop-up.
+- **Limpar todos os filtros** e **Fechar** no rodapé; também fecha com `Esc`, no `X`, clicando fora do pop-up ou, sozinho, **ao tirar o mouse de cima do visual** (pode ser desligado em Formatar visual → Pop-up).
 - O botão mostra um contador com quantos campos estão filtrados.
 - **Copiar e colar:** clique no visual e use `Ctrl+C` / `Ctrl+V`, ou o **menu do botão direito** do Power BI.
 - **Sincronizar entre páginas:** o visual aparece no painel **Exibir → Sincronizar segmentações**, como a segmentação nativa. Ao colar em outra página, o Power BI pergunta se quer sincronizar.
@@ -31,7 +31,7 @@ Botão **"Abrir Filtros"** (azul-claro, ícone de funil, divisória e seta) que 
 ### Formatação (painel "Formatar visual")
 
 - **Botão:** texto, cor de fundo, cor do texto/ícones, fonte, tamanho da fonte do texto, arredondamento, altura, espessura e cor da borda, ícone e contador.
-- **Pop-up:** título, tamanho da fonte do título, tamanho da fonte do título dos filtros, tamanho da fonte dos valores, cor de fundo, cor dos painéis, cor do texto, espessura e cor da borda, abrir abaixo do botão ou por cima dele.
+- **Pop-up:** título, tamanho da fonte do título, tamanho da fonte do título dos filtros, tamanho da fonte dos valores, cor de fundo, cor dos painéis, cor do texto, espessura e cor da borda, abrir abaixo do botão ou por cima dele, fechar ao tirar o mouse (ligado por padrão) e espera antes de fechar (padrão 400 ms; se o mouse voltar nesse tempo, o pop-up continua aberto).
 - **Botões do pop-up** ("Limpar todos os filtros" e "Fechar"): posição (esquerda, centro ou direita), tamanho da fonte, fonte, largura (0 = automática), cor de fundo e cor do texto de cada um. Os dois botões têm sempre a mesma largura e altura.
 - **Filtros:** abrir com os filtros retraídos (ligado por padrão), seleção única, caixa de pesquisa, intervalo para números e datas, limite de combinações lidas, espessura e cor da borda de cada bloco de filtro.
 - **Caixa de seleção:** símbolo quando selecionado (visto ✓, xis ✕, bolinha ●, quadrado ■ ou nenhum), formato (quadrada arredondada, quadrada ou redonda), tamanho, espessura da borda, cor de fundo e da borda quando não selecionada, e cor de fundo, da borda e do símbolo quando selecionada.

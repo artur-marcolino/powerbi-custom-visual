@@ -138,6 +138,20 @@ class PopupCardSettings extends FormattingSettingsCard {
         value: false
     });
 
+    closeOnMouseLeave = new formattingSettings.ToggleSwitch({
+        name: "closeOnMouseLeave",
+        displayName: "Fechar ao tirar o mouse",
+        description: "Fecha o pop-up sozinho quando o mouse sai de cima do visual.",
+        value: true
+    });
+
+    closeDelay = new formattingSettings.NumUpDown({
+        name: "closeDelay",
+        displayName: "Espera antes de fechar (ms)",
+        description: "Tempo que o mouse pode ficar fora do visual antes de o pop-up fechar. Voltar com o mouse nesse intervalo cancela o fechamento.",
+        value: 400
+    });
+
     name: string = "popup";
     displayName: string = "Pop-up";
     borderWidth = new formattingSettings.NumUpDown({
@@ -154,7 +168,8 @@ class PopupCardSettings extends FormattingSettingsCard {
 
     slices: Array<FormattingSettingsSlice> = [
         this.title, this.titleFontSize, this.fieldFontSize, this.valueFontSize,
-        this.fill, this.panelFill, this.fontColor, this.borderWidth, this.borderColor, this.overlay
+        this.fill, this.panelFill, this.fontColor, this.borderWidth, this.borderColor, this.overlay,
+        this.closeOnMouseLeave, this.closeDelay
     ];
 }
 

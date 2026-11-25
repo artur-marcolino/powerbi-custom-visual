@@ -129,6 +129,7 @@ export class Visual implements IVisual {
     private catalogNow = new SegmentAccumulator();
     private cascading = false;
     private selfFilterApplied = false;
+    private leaveTimer: number | undefined;
 
     constructor(options: VisualConstructorOptions) {
         this.host = options.host;
@@ -146,6 +147,22 @@ export class Visual implements IVisual {
                 this.button.focus();
             }
         });
+
+        // Fecha o pop-up quando o mouse sai de cima do visual (o usuário costuma esquecer de fechar).
+        // O visual roda num iframe: "mouseleave" no documento dispara quando o mouse sai do visual.
+        document.documentElement.addEventListener("mouseleave", (e: MouseEvent) => {
+            const popup = this.formattingSettings?.popupCard;
+            // Botão apertado = arrastando (ex.: a barra de rolagem); não fecha no meio do gesto.
+            if (!this.isOpen || !popup?.closeOnMouseLeave.value || e.buttons !== 0) {
+                return;
+            }
+            this.cancelLeaveClose();
+            this.leaveTimer = window.setTimeout(() => {
+                this.leaveTimer = undefined;
+                this.setOpen(false);
+            }, Math.max(0, popup.closeDelay.value ?? 0));
+        });
+        document.documentElement.addEventListener("mouseenter", () => this.cancelLeaveClose());
 
         // Menu do botão direito do Power BI (copiar, colar, etc.), como nos visuais nativos.
         this.selectionManager = this.host.createSelectionManager();
@@ -224,6 +241,14 @@ export class Visual implements IVisual {
 
     public destroy(): void {
         this.cancelPendingFetch();
+        this.cancelLeaveClose();
+    }
+
+    private cancelLeaveClose(): void {
+        if (this.leaveTimer !== undefined) {
+            window.clearTimeout(this.leaveTimer);
+            this.leaveTimer = undefined;
+        }
     }
 
     // ------------------------------------------------------------ leitura em partes
@@ -623,6 +648,7 @@ export class Visual implements IVisual {
         if (open && !this.isOpen && this.formattingSettings?.slicerCard.startCollapsed.value) {
             this.collapseAll();
         }
+        this.cancelLeaveClose();
         this.isOpen = open;
         this.root.classList.toggle("fp-open", open);
         this.button.setAttribute("aria-expanded", String(open));

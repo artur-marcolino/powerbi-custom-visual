@@ -8,7 +8,7 @@ Substituto mais bonito da **segmentação de dados (slicer) nativa** do Power BI
 
 ## Como usar
 
-1. Baixe [`dist/segmentacaoEstilizada9140412062C0470F98172EC5D1A911C8.1.4.2.0.pbiviz`](dist/).
+1. Baixe [`dist/segmentacaoEstilizada9140412062C0470F98172EC5D1A911C8.1.5.0.0.pbiviz`](dist/).
 2. No Power BI Desktop: **Visualizações → `…` → Importar um visual de um arquivo**.
 3. Arraste uma coluna para **Campo**. Para uma **hierarquia** (filtro aninhado), coloque o nível de cima em **Campo** e os de baixo em **Níveis abaixo (hierarquia)**, na ordem: por exemplo, *Ano* em Campo e *Mês* em Níveis abaixo.
 4. Em **Formatar visual → Layout → Estilo**, escolha **Blocos (botões)**, **Lista vertical** ou **Suspenso**.
@@ -56,9 +56,9 @@ Funciona com **parâmetros de campo** (inclusive com uma coluna de grupo, para e
 - **Cabeçalho:** mostrar, texto, tamanho da fonte, fonte, cor, botão de limpar.
 - **Itens:** tamanho da fonte, fonte, cor de fundo e do texto, cor de fundo e do texto quando **selecionado**, arredondamento, altura, espessura e cor da borda, mostrar caixa de seleção.
 - **Caixa de seleção:** símbolo quando selecionado (visto ✓, xis ✕, bolinha ●, quadrado ■ ou nenhum), formato (quadrada arredondada, quadrada ou redonda), tamanho, espessura da borda, cor de fundo e da borda quando não selecionada, e cor de fundo, da borda e do símbolo quando selecionada.
-- **Suspenso:** texto quando nada está selecionado, cor de fundo e do texto da caixa, tamanho da fonte, arredondamento, altura, espessura e cor da borda, cor da lista aberta.
+- **Suspenso:** texto quando nada está selecionado, cor de fundo e do texto da caixa, tamanho da fonte, arredondamento, altura, espessura e cor da borda, cor da lista aberta, fechar ao tirar o mouse (ligado por padrão) e espera antes de fechar (padrão 400 ms; se o mouse voltar nesse tempo, a lista continua aberta).
 
 ## Observações
 
-- **Suspenso:** como em todo visual personalizado, a lista aberta só aparece **dentro da área do visual** (o Power BI não deixa desenhar fora dela). Deixe o visual alto o suficiente para a lista; com ela fechada, a área abaixo da caixa fica transparente. A lista fecha ao escolher (na seleção única), com `Esc`, clicando de novo na caixa ou **clicando fora do visual**, em qualquer lugar do relatório.
+- **Suspenso:** como em todo visual personalizado, a lista aberta só aparece **dentro da área do visual** (o Power BI não deixa desenhar fora dela). Deixe o visual alto o suficiente para a lista; com ela fechada, a área abaixo da caixa fica transparente. A lista fecha ao escolher (na seleção única), com `Esc`, clicando de novo na caixa, **clicando fora do visual**, em qualquer lugar do relatório, ou **ao tirar o mouse de cima do visual**.
 - Um campo por visual, como na segmentação nativa. Para vários campos num lugar só, use o [Filtro em Pop-up](../filtro-popup/).

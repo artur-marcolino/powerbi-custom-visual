@@ -98,6 +98,7 @@ export class Visual implements IVisual {
     private state: FieldState = emptyState();
     private search = "";
     private dropdownOpen = false;
+    private leaveTimer: number | undefined;
 
     constructor(options: VisualConstructorOptions) {
         this.host = options.host;
@@ -130,6 +131,24 @@ export class Visual implements IVisual {
                 this.setDropdown(false, false);
             }
         });
+
+        // Fecha o suspenso quando o mouse sai de cima do visual (o usuário costuma esquecer de fechar).
+        // O visual roda num iframe: "mouseleave" no documento dispara quando o mouse sai do visual.
+        document.documentElement.addEventListener("mouseleave", (e: MouseEvent) => {
+            const dropdown = this.formattingSettings?.dropdownCard;
+            // Botão apertado = arrastando (ex.: a barra de rolagem); não fecha no meio do gesto.
+            if (!this.dropdownOpen || !dropdown?.closeOnMouseLeave.value || e.buttons !== 0) {
+                return;
+            }
+            this.cancelLeaveClose();
+            this.leaveTimer = window.setTimeout(() => {
+                this.leaveTimer = undefined;
+                if (this.dropdownOpen) {
+                    this.setDropdown(false);
+                }
+            }, Math.max(0, dropdown.closeDelay.value ?? 0));
+        });
+        document.documentElement.addEventListener("mouseenter", () => this.cancelLeaveClose());
 
         this.root.addEventListener("keydown", (e: KeyboardEvent) => {
             if (e.key === "Escape" && this.dropdownOpen) {
@@ -773,6 +792,7 @@ export class Visual implements IVisual {
 
     /** Abre/fecha o suspenso. toHost=false quando o foco já saiu do visual (clique fora). */
     private setDropdown(open: boolean, toHost = true): void {
+        this.cancelLeaveClose();
         this.dropdownOpen = open;
         if (open) {
             this.captureFocus();
@@ -780,6 +800,13 @@ export class Visual implements IVisual {
             this.releaseFocus(toHost);
         }
         this.render();
+    }
+
+    private cancelLeaveClose(): void {
+        if (this.leaveTimer !== undefined) {
+            window.clearTimeout(this.leaveTimer);
+            this.leaveTimer = undefined;
+        }
     }
 
     /** Põe o foco dentro do visual, para saber (pelo "blur" da janela) quando clicarem fora. */
